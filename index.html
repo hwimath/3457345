@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>일차부등식 빈출 (4)</title>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" defer></script>
+  <style>
+    body {
+      background-color: #fff;
+      color: #000;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+    }
+    #start-screen, #game-screen, #game-over {
+      max-width: 600px;
+      margin: 0 auto;
+      text-align: center;
+    }
+    input, select, button {
+      font-size: 1rem;
+      padding: 8px;
+      margin: 5px;
+    }
+    #choices-container button {
+      display: block;
+      width: 100%;
+      margin: 5px 0;
+      padding: 10px;
+      border: 1px solid #000;
+      background-color: #fff;
+      cursor: pointer;
+    }
+    #choices-container button:hover {
+      background-color: #eee;
+    }
+    #next-button, #send-score {
+      padding: 10px 20px;
+      font-size: 1rem;
+      margin-top: 10px;
+      cursor: pointer;
+    }
+    #next-button:disabled, #send-score:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    #energy-bar-container {
+      width: 100%;
+      height: 20px;
+      border: 1px solid #000;
+      margin: 10px auto;
+      background-color: #fff;
+      position: relative;
+    }
+    #energy-bar {
+      height: 100%;
+      background-color: #000;
+      width: 100%;
+      transition: width 0.1s linear;
+    }
+    .info {
+      margin: 10px 0;
+    }
+  </style>
+</head>
+<body>
+  <!-- 시작 화면 -->
+  <div id="start-screen">
+    <h1>일차부등식 빈출 (4)</h1>
+    <p>이름: <input type="text" id="player-name" placeholder="이름을 입력하세요"></p>
+    <p>난이도 선택:
+      <select id="difficulty-select">
+        <option value="최상">최상</option>
+        <option value="상">상</option>
+        <option value="중">중</option>
+        <option value="하">하</option>
+      </select>
+    </p>
+    <button id="start-button">시작</button>
+  </div>
+
+  <!-- 게임 화면 -->
+  <div id="game-screen" style="display:none;">
+    <div class="info">
+      <span id="overall-time">전체 시간: 0초</span> | 
+      <span id="lives">남은 기회: 3</span> | 
+      <span id="score">점수: 0점</span>
+    </div>
+    <div id="energy-bar-container" style="display:none;">
+      <div id="energy-bar"></div>
+    </div>
+    <div id="question-container" style="margin:20px 0; min-height:60px;"></div>
+    <div id="choices-container"></div>
+    <div id="feedback" style="min-height:30px; margin:10px 0;"></div>
+    <button id="next-button" disabled>다음 문제</button>
+  </div>
+
+  <!-- 게임 오버 화면 -->
+  <div id="game-over" style="display:none;">
+    <h2>게임 오버</h2>
+    <p id="final-score"></p>
+    <p id="final-time"></p>
+    <button id="send-score">점수전송</button>
+    <div id="response" style="margin-top:10px;"></div>
+  </div>
+
+  <script>
+    // --- 전역 변수 ---
+    let questions = [];
+    let currentQuestionIndex = 0;
+    let currentQuestion = null;
+    let score = 0;
+    let lives = 3;
+    let overallStartTime = null;
+    let overallTimerInterval = null;
+    let questionTimerInterval = null;
+    let questionTimeLimit = null; // in milliseconds
+    let remainingTime = null; // for energy bar
+    let answered = false;
+    let difficulty = "최상";
+    let pointsPerQuestion = 20; // default for 최상
+
+    // --- 미리 제작한 35문제 (5유형 × 7문제) ---
+    // 유형 1: 나이 부등식 문제
+    const ageQuestions = [
+      {
+        question: "현재 아버지의 나이가 \\(48\\)세이고, 아들의 나이가 \\(15\\)세라고 할 때, 몇 년 후부터 아버지의 나이가 아들의 나이의 \\(2\\)배 이하가 되는가?",
+        answer: "18년 후",
+        choices: ["15년 후", "16년 후", "17년 후", "18년 후", "19년 후"]
+      },
+      {
+        question: "현재 아버지의 나이가 \\(55\\)세이고, 아들의 나이가 \\(18\\)세라고 할 때, 몇 년 후부터 아버지의 나이가 아들의 나이의 \\(2\\)배 이하가 되는가?",
+        answer: "19년 후",
+        choices: ["17년 후", "18년 후", "19년 후", "20년 후", "21년 후"]
+      },
+      {
+        question: "현재 아버지의 나이가 \\(60\\)세이고, 아들의 나이가 \\(20\\)세라고 할 때, 몇 년 후부터 아버지의 나이가 아들의 나이의 \\(2\\)배 이하가 되는가?",
+        answer: "20년 후",
+        choices: ["18년 후", "19년 후", "20년 후", "21년 후", "22년 후"]
+      },
+      {
+        question: "현재 아버지의 나이가 \\(50\\)세이고, 아들의 나이가 \\(16\\)세라고 할 때, 몇 년 후부터 아버지의 나이가 아들의 나이의 \\(2\\)배 이하가 되는가?",
+        answer: "18년 후",
+        choices: ["16년 후", "17년 후", "18년 후", "19년 후", "20년 후"]
+      },
+      {
+        question: "현재 아버지의 나이가 \\(64\\)세이고, 아들의 나이가 \\(21\\)세라고 할 때, 몇 년 후부터 아버지의 나이가 아들의 나이의 \\(2\\)배 이하가 되는가?",
+        answer: "22년 후",
+        choices: ["20년 후", "21년 후", "22년 후", "23년 후", "24년 후"]
+      },
+      {
+        question: "현재 아버지의 나이가 \\(57\\)세이고, 아들의 나이가 \\(17\\)세라고 할 때, 몇 년 후부터 아버지의 나이가 아들의 나이의 \\(2\\)배 이하가 되는가?",
+        answer: "23년 후",
+        choices: ["21년 후", "22년 후", "23년 후", "24년 후", "25년 후"]
+      },
+      {
+        question: "현재 아버지의 나이가 \\(62\\)세이고, 아들의 나이가 \\(19\\)세라고 할 때, 몇 년 후부터 아버지의 나이가 아들의 나이의 \\(2\\)배 이하가 되는가?",
+        answer: "24년 후",
+        choices: ["22년 후", "23년 후", "24년 후", "25년 후", "26년 후"]
+      }
+    ];
+
+    // 유형 2: 선물 상자 비용 문제
+    const giftQuestions = [
+      {
+        question: "은정이는 한 자루에 \\(500\\)원인 사인펜 \\(3\\)자루와 한 자루에 \\(1000\\)원인 볼펜 몇 자루를 \\(2000\\)원짜리 선물상자에 넣어 \\(7000\\)원 이하의 선물을 만들려고 한다. 볼펜은 최대 몇 자루까지 넣을 수 있는가?",
+        answer: "3자루",
+        choices: ["2자루", "3자루", "4자루", "5자루", "6자루"]
+      },
+      {
+        question: "은정이는 한 자루에 \\(400\\)원인 사인펜 \\(4\\)자루와 한 자루에 \\(1200\\)원인 볼펜 몇 자루를 \\(2500\\)원짜리 선물상자에 넣어 \\(9000\\)원 이하의 선물을 만들려고 한다. 볼펜은 최대 몇 자루까지 넣을 수 있는가?",
+        answer: "4자루",
+        choices: ["3자루", "4자루", "5자루", "6자루", "7자루"]
+      },
+      {
+        question: "은정이는 한 자루에 \\(600\\)원인 사인펜 \\(2\\)자루와 한 자루에 \\(900\\)원인 볼펜 몇 자루를 \\(1800\\)원짜리 선물상자에 넣어 \\(6000\\)원 이하의 선물을 만들려고 한다. 볼펜은 최대 몇 자루까지 넣을 수 있는가?",
+        answer: "3자루",
+        choices: ["2자루", "3자루", "4자루", "5자루", "6자루"]
+      },
+      {
+        question: "은정이는 한 자루에 \\(550\\)원인 사인펜 \\(3\\)자루와 한 자루에 \\(1100\\)원인 볼펜 몇 자루를 \\(2200\\)원짜리 선물상자에 넣어 \\(7500\\)원 이하의 선물을 만들려고 한다. 볼펜은 최대 몇 자루까지 넣을 수 있는가?",
+        answer: "3자루",
+        choices: ["2자루", "3자루", "4자루", "5자루", "6자루"]
+      },
+      {
+        question: "은정이는 한 자루에 \\(450\\)원인 사인펜 \\(3\\)자루와 한 자루에 \\(950\\)원인 볼펜 몇 자루를 \\(2100\\)원짜리 선물상자에 넣어 \\(6800\\)원 이하의 선물을 만들려고 한다. 볼펜은 최대 몇 자루까지 넣을 수 있는가?",
+        answer: "3자루",
+        choices: ["2자루", "3자루", "4자루", "5자루", "6자루"]
+      },
+      {
+        question: "은정이는 한 자루에 \\(480\\)원인 사인펜 \\(2\\)자루와 한 자루에 \\(1000\\)원인 볼펜 몇 자루를 \\(1900\\)원짜리 선물상자에 넣어 \\(6500\\)원 이하의 선물을 만들려고 한다. 볼펜은 최대 몇 자루까지 넣을 수 있는가?",
+        answer: "3자루",
+        choices: ["2자루", "3자루", "4자루", "5자루", "6자루"]
+      },
+      {
+        question: "은정이는 한 자루에 \\(520\\)원인 사인펜 \\(3\\)자루와 한 자루에 \\(1050\\)원인 볼펜 몇 자루를 \\(2300\\)원짜리 선물상자에 넣어 \\(7700\\)원 이하의 선물을 만들려고 한다. 볼펜은 최대 몇 자루까지 넣을 수 있는가?",
+        answer: "3자루",
+        choices: ["2자루", "3자루", "4자루", "5자루", "6자루"]
+      }
+    ];
+
+    // 유형 3: 시험 평균 문제
+    const examQuestions = [
+      {
+        question: "태윤이는 두 번의 시험에서 각각 \\(80\\)점과 \\(72\\)점을 받았다. 세 번째 시험에서 최소 몇 점 이상을 받아야 세 번의 시험 성적의 평균이 \\(81\\)점 이상이 될 수 있는가?",
+        answer: "91점",
+        choices: ["89점", "91점", "94점", "98점", "100점"]
+      },
+      {
+        question: "태윤이는 두 번의 시험에서 각각 \\(75\\)점과 \\(85\\)점을 받았다. 세 번째 시험에서 최소 몇 점 이상을 받아야 세 번의 시험 성적의 평균이 \\(80\\)점 이상이 될 수 있는가?",
+        answer: "80점",
+        choices: ["78점", "79점", "80점", "81점", "82점"]
+      },
+      {
+        question: "태윤이는 두 번의 시험에서 각각 \\(82\\)점과 \\(78\\)점을 받았다. 세 번째 시험에서 최소 몇 점 이상을 받아야 세 번의 시험 성적의 평균이 \\(83\\)점 이상이 될 수 있는가?",
+        answer: "89점",
+        choices: ["87점", "89점", "90점", "91점", "92점"]
+      },
+      {
+        question: "태윤이는 두 번의 시험에서 각각 \\(90\\)점과 \\(70\\)점을 받았다. 세 번째 시험에서 최소 몇 점 이상을 받아야 세 번의 시험 성적의 평균이 \\(82\\)점 이상이 될 수 있는가?",
+        answer: "86점",
+        choices: ["84점", "85점", "86점", "87점", "88점"]
+      },
+      {
+        question: "태윤이는 두 번의 시험에서 각각 \\(77\\)점과 \\(69\\)점을 받았다. 세 번째 시험에서 최소 몇 점 이상을 받아야 세 번의 시험 성적의 평균이 \\(75\\)점 이상이 될 수 있는가?",
+        answer: "79점",
+        choices: ["77점", "78점", "79점", "80점", "81점"]
+      },
+      {
+        question: "태윤이는 두 번의 시험에서 각각 \\(88\\)점과 \\(74\\)점을 받았다. 세 번째 시험에서 최소 몇 점 이상을 받아야 세 번의 시험 성적의 평균이 \\(82\\)점 이상이 될 수 있는가?",
+        answer: "84점",
+        choices: ["82점", "83점", "84점", "85점", "86점"]
+      },
+      {
+        question: "태윤이는 두 번의 시험에서 각각 \\(85\\)점과 \\(80\\)점을 받았다. 세 번째 시험에서 최소 몇 점 이상을 받아야 세 번의 시험 성적의 평균이 \\(83\\)점 이상이 될 수 있는가?",
+        answer: "84점",
+        choices: ["82점", "83점", "84점", "85점", "86점"]
+      }
+    ];
+
+    // 유형 4: 박물관 단체 할인 문제
+    const museumQuestions = [
+      {
+        question: "어느 박물관의 특별 전시회 입장료는 한 사람당 \\(8000\\)원이고, \\(20\\)명 이상의 단체인 경우에는 입장료의 \\(15\\)%를 할인해 준다고 한다. 몇 명 이상부터 \\(20\\)명의 단체 입장권을 사는 것이 유리한가?",
+        answer: "18명 이상",
+        choices: ["17명 이상", "18명 이상", "19명 이상", "20명 이상", "21명 이상"]
+      },
+      {
+        question: "어느 박물관의 특별 전시회 입장료는 한 사람당 \\(7500\\)원이고, \\(20\\)명 이상의 단체인 경우에는 입장료의 \\(20\\)%를 할인해 준다고 한다. 몇 명 이상부터 \\(20\\)명의 단체 입장권을 사는 것이 유리한가?",
+        answer: "17명 이상",
+        choices: ["16명 이상", "17명 이상", "18명 이상", "19명 이상", "20명 이상"]
+      },
+      {
+        question: "어느 박물관의 특별 전시회 입장료는 한 사람당 \\(9000\\)원이고, \\(25\\)명 이상의 단체인 경우에는 입장료의 \\(10\\)%를 할인해 준다고 한다. 몇 명 이상부터 \\(25\\)명의 단체 입장권을 사는 것이 유리한가?",
+        answer: "23명 이상",
+        choices: ["22명 이상", "23명 이상", "24명 이상", "25명 이상", "26명 이상"]
+      },
+      {
+        question: "어느 박물관의 특별 전시회 입장료는 한 사람당 \\(8500\\)원이고, \\(15\\)명 이상의 단체인 경우에는 입장료의 \\(25\\)%를 할인해 준다고 한다. 몇 명 이상부터 \\(15\\)명의 단체 입장권을 사는 것이 유리한가?",
+        answer: "12명 이상",
+        choices: ["11명 이상", "12명 이상", "13명 이상", "14명 이상", "15명 이상"]
+      },
+      {
+        question: "어느 박물관의 특별 전시회 입장료는 한 사람당 \\(7000\\)원이고, \\(20\\)명 이상의 단체인 경우에는 입장료의 \\(5\\)%를 할인해 준다고 한다. 몇 명 이상부터 \\(20\\)명의 단체 입장권을 사는 것이 유리한가?",
+        answer: "20명 이상",
+        choices: ["18명 이상", "19명 이상", "20명 이상", "21명 이상", "22명 이상"]
+      },
+      {
+        question: "어느 박물관의 특별 전시회 입장료는 한 사람당 \\(8000\\)원이고, \\(30\\)명 이상의 단체인 경우에는 입장료의 \\(30\\)%를 할인해 준다고 한다. 몇 명 이상부터 \\(30\\)명의 단체 입장권을 사는 것이 유리한가?",
+        answer: "22명 이상",
+        choices: ["20명 이상", "21명 이상", "22명 이상", "23명 이상", "24명 이상"]
+      },
+      {
+        question: "어느 박물관의 특별 전시회 입장료는 한 사람당 \\(9500\\)원이고, \\(25\\)명 이상의 단체인 경우에는 입장료의 \\(20\\)%를 할인해 준다고 한다. 몇 명 이상부터 \\(25\\)명의 단체 입장권을 사는 것이 유리한가?",
+        answer: "21명 이상",
+        choices: ["20명 이상", "21명 이상", "22명 이상", "23명 이상", "24명 이상"]
+      }
+    ];
+
+    // 유형 5: 노트 구입 비용 문제
+    const notebookQuestions = [
+      {
+        question: "집 앞 문구점에서 노트가 \\(2500\\)원에 판다고 한다. 도매점에서는 노트를 \\(1750\\)원에 판다고 하는데, 집에서 도매점에 가기 위해서는 왕복으로 \\(6000\\)원의 차비가 든다. 도매점에 다녀오는 것이 유리하기 위해 구입할 수 있는 노트의 최소 개수는?",
+        answer: "9권",
+        choices: ["6권", "7권", "8권", "9권", "10권"]
+      },
+      {
+        question: "집 앞 문구점에서 노트가 \\(2600\\)원에 판다고 한다. 도매점에서는 노트를 \\(1800\\)원에 판다고 하는데, 집에서 도매점에 가기 위해서는 왕복으로 \\(5400\\)원의 차비가 든다. 도매점에 다녀오는 것이 유리하기 위해 구입할 수 있는 노트의 최소 개수는?",
+        answer: "7권",
+        choices: ["6권", "7권", "8권", "9권", "10권"]
+      },
+      {
+        question: "집 앞 문구점에서 노트가 \\(2400\\)원에 판다고 한다. 도매점에서는 노트를 \\(1700\\)원에 판다고 하는데, 집에서 도매점에 가기 위해서는 왕복으로 \\(6800\\)원의 차비가 든다. 도매점에 다녀오는 것이 유리하기 위해 구입할 수 있는 노트의 최소 개수는?",
+        answer: "10권",
+        choices: ["8권", "9권", "10권", "11권", "12권"]
+      },
+      {
+        question: "집 앞 문구점에서 노트가 \\(2700\\)원에 판다고 한다. 도매점에서는 노트를 \\(1900\\)원에 판다고 하는데, 집에서 도매점에 가기 위해서는 왕복으로 \\(7600\\)원의 차비가 든다. 도매점에 다녀오는 것이 유리하기 위해 구입할 수 있는 노트의 최소 개수는?",
+        answer: "10권",
+        choices: ["8권", "9권", "10권", "11권", "12권"]
+      },
+      {
+        question: "집 앞 문구점에서 노트가 \\(2300\\)원에 판다고 한다. 도매점에서는 노트를 \\(1600\\)원에 판다고 하는데, 집에서 도매점에 가기 위해서는 왕복으로 \\(5600\\)원의 차비가 든다. 도매점에 다녀오는 것이 유리하기 위해 구입할 수 있는 노트의 최소 개수는?",
+        answer: "9권",
+        choices: ["7권", "8권", "9권", "10권", "11권"]
+      },
+      {
+        question: "집 앞 문구점에서 노트가 \\(2550\\)원에 판다고 한다. 도매점에서는 노트를 \\(1750\\)원에 판다고 하는데, 집에서 도매점에 가기 위해서는 왕복으로 \\(6000\\)원의 차비가 든다. 도매점에 다녀오는 것이 유리하기 위해 구입할 수 있는 노트의 최소 개수는?",
+        answer: "8권",
+        choices: ["7권", "8권", "9권", "10권", "11권"]
+      },
+      {
+        question: "집 앞 문구점에서 노트가 \\(2450\\)원에 판다고 한다. 도매점에서는 노트를 \\(1650\\)원에 판다고 하는데, 집에서 도매점에 가기 위해서는 왕복으로 \\(6300\\)원의 차비가 든다. 도매점에 다녀오는 것이 유리하기 위해 구입할 수 있는 노트의 최소 개수는?",
+        answer: "8권",
+        choices: ["7권", "8권", "9권", "10권", "11권"]
+      }
+    ];
+
+    // 모든 문제 배열에 합치기 (문제 순서는 섞는다)
+    questions = [].concat(ageQuestions, giftQuestions, examQuestions, museumQuestions, notebookQuestions);
+
+    // --- shuffleArray 함수 ---
+    function shuffleArray(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+      return array;
+    }
+
+    // --- 난이도에 따른 설정 ---
+    function setDifficultySettings() {
+      const diff = document.getElementById("difficulty-select").value;
+      difficulty = diff;
+      if(diff === "최상") {
+        questionTimeLimit = 20 * 1000;
+        pointsPerQuestion = 20;
+      } else if(diff === "상") {
+        questionTimeLimit = 30 * 1000;
+        pointsPerQuestion = 15;
+      } else if(diff === "중") {
+        questionTimeLimit = 40 * 1000;
+        pointsPerQuestion = 13;
+      } else if(diff === "하") {
+        questionTimeLimit = null;
+        pointsPerQuestion = 10;
+      }
+    }
+
+    // --- 전체 시간 업데이트 ---
+    function updateOverallTime() {
+      const now = Date.now();
+      const elapsedSec = Math.floor((now - overallStartTime) / 1000);
+      document.getElementById("overall-time").innerText = "전체 시간: " + elapsedSec + "초";
+    }
+
+    // --- 문제 타이머 시작 (에너지바) ---
+    function startQuestionTimer() {
+      if (questionTimeLimit === null) return;
+      remainingTime = questionTimeLimit;
+      const energyBar = document.getElementById("energy-bar");
+      energyBar.style.width = "100%";
+      const startTime = Date.now();
+      questionTimerInterval = setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        remainingTime = questionTimeLimit - elapsed;
+        let percent = (remainingTime / questionTimeLimit) * 100;
+        if (percent < 0) percent = 0;
+        energyBar.style.width = percent + "%";
+        if (remainingTime <= 0) {
+          clearInterval(questionTimerInterval);
+          if (!answered) {
+            answered = true;
+            // 시간 초과 처리
+            lives--;
+            document.getElementById("lives").innerText = "남은 기회: " + lives;
+            document.getElementById("feedback").innerText = "시간 초과! 정답은 " + currentQuestion.answer;
+            document.getElementById("next-button").disabled = false;
+            if (lives <= 0) {
+              setTimeout(gameOver, 1000);
+            }
+          }
+        }
+      }, 100);
+    }
+
+    // --- 다음 문제 로드 ---
+    function loadNextQuestion() {
+      answered = false;
+      document.getElementById("feedback").innerText = "";
+      document.getElementById("next-button").disabled = true;
+      // 만약 미리 준비한 문제가 남아있지 않으면 랜덤 생성
+      if (currentQuestionIndex < questions.length) {
+        currentQuestion = questions[currentQuestionIndex];
+        currentQuestionIndex++;
+      } else {
+        currentQuestion = generateRandomQuestion();
+      }
+      // 문제 및 보기를 표시
+      document.getElementById("question-container").innerHTML = "<p>" + currentQuestion.question + "</p>";
+      let choices = currentQuestion.choices.slice();
+      shuffleArray(choices);
+      const choicesContainer = document.getElementById("choices-container");
+      choicesContainer.innerHTML = "";
+      choices.forEach(choice => {
+        const btn = document.createElement("button");
+        btn.innerHTML = "<span>" + choice + "</span>";
+        btn.addEventListener("click", () => { answerQuestion(choice); });
+        choicesContainer.appendChild(btn);
+      });
+      // 에너지바 표시 여부
+      if (questionTimeLimit !== null) {
+        document.getElementById("energy-bar-container").style.display = "block";
+        startQuestionTimer();
+      } else {
+        document.getElementById("energy-bar-container").style.display = "none";
+      }
+      MathJax.typeset();
+    }
+
+    // --- 정답 확인 ---
+    function answerQuestion(selectedChoice) {
+      if (answered) return;
+      answered = true;
+      if (questionTimerInterval) clearInterval(questionTimerInterval);
+      const feedbackDiv = document.getElementById("feedback");
+      if (selectedChoice === currentQuestion.answer) {
+        feedbackDiv.innerText = "정답입니다!";
+        score += pointsPerQuestion;
+        document.getElementById("score").innerText = "점수: " + score + "점";
+      } else {
+        lives--;
+        feedbackDiv.innerText = "오답입니다! 정답은 " + currentQuestion.answer;
+        document.getElementById("lives").innerText = "남은 기회: " + lives;
+      }
+      document.getElementById("next-button").disabled = false;
+      if (lives <= 0) {
+        setTimeout(gameOver, 1000);
+      }
+    }
+
+    // --- 다음 문제 버튼 클릭 ---
+    document.getElementById("next-button").addEventListener("click", () => {
+      loadNextQuestion();
+      MathJax.typeset();
+    });
+
+    // --- 게임 오버 ---
+    function gameOver() {
+      clearInterval(overallTimerInterval);
+      document.getElementById("game-screen").style.display = "none";
+      document.getElementById("game-over").style.display = "block";
+      document.getElementById("final-score").innerText = "최종 점수: " + score + "점";
+      const now = Date.now();
+      const elapsedSec = Math.floor((now - overallStartTime) / 1000);
+      document.getElementById("final-time").innerText = "총 게임 시간: " + elapsedSec + "초";
+      MathJax.typeset();
+    }
+
+    // --- 난이도에 따른 랜덤 문제 생성 (모든 문제가 소진된 후 계속 출제) ---
+    function generateRandomQuestion() {
+      // type: "age", "gift", "exam", "museum", "notebook"
+      const types = ["age", "gift", "exam", "museum", "notebook"];
+      const type = types[Math.floor(Math.random() * types.length)];
+      let qObj = {};
+      if (type === "age") {
+        // 부모 나이 P, 자식 나이 C
+        const P = Math.floor(Math.random() * 20) + 45; // 45 ~ 64
+        const C = Math.floor(Math.random() * 6) + 14;    // 14 ~ 19
+        const t = P - 2 * C;
+        qObj.question = "현재 아버지의 나이가 \\(" + P + "\\)세이고, 아들의 나이가 \\(" + C + "\\)세라고 할 때, 몇 년 후부터 아버지의 나이가 아들의 나이의 \\(2\\)배 이하가 되는가?";
+        const correct = t + "년 후";
+        qObj.answer = correct;
+        qObj.choices = [ (t-2) + "년 후", (t-1) + "년 후", correct, (t+1) + "년 후", (t+2) + "년 후" ];
+      } else if (type === "gift") {
+        const A = (Math.floor(Math.random() * 100) + 400); // 사인펜 가격 400~500
+        const nA = Math.floor(Math.random() * 2) + 2; // 2 or 3 자루
+        const B = (Math.floor(Math.random() * 500) + 1800); // 선물상자 1800~2300
+        const D = (Math.floor(Math.random() * 200) + 900);  // 볼펜 가격 900~1100
+        const M = (Math.floor(Math.random() * 2000) + 6000); // 최대 총액 6000~8000
+        const cost = B + nA * A;
+        const maxX = Math.floor((M - cost) / D);
+        qObj.question = "은정이는 한 자루에 \\(" + A + "\\)원인 사인펜 \\(" + nA + "\\)자루와 한 자루에 \\(" + D + "\\)원인 볼펜 몇 자루를 \\(" + B + "\\)원짜리 선물상자에 넣어 \\(" + M + "\\)원 이하의 선물을 만들려고 한다. 볼펜은 최대 몇 자루까지 넣을 수 있는가?";
+        const correct = maxX + "자루";
+        qObj.answer = correct;
+        qObj.choices = [ (maxX-1) + "자루", correct, (maxX+1) + "자루", (maxX+2) + "자루", (maxX-2) + "자루" ];
+      } else if (type === "exam") {
+        const S1 = Math.floor(Math.random() * 21) + 75; // 75 ~ 95
+        const S2 = Math.floor(Math.random() * 21) + 70; // 70 ~ 90
+        const T = Math.floor(Math.random() * 6) + 80;    // 80 ~ 85
+        const required = 3 * T - (S1 + S2);
+        qObj.question = "태윤이는 두 번의 시험에서 각각 \\(" + S1 + "\\)점과 \\(" + S2 + "\\)점을 받았다. 세 번째 시험에서 최소 몇 점 이상을 받아야 세 번의 시험 성적의 평균이 \\(" + T + "\\)점 이상이 될 수 있는가?";
+        const correct = required + "점";
+        qObj.answer = correct;
+        qObj.choices = [ (required-2) + "점", (required-1) + "점", correct, (required+1) + "점", (required+2) + "점" ];
+      } else if (type === "museum") {
+        const P = (Math.floor(Math.random() * 501) + 7000); // 7000~7500 혹은 8000, 9000, 9500 등 다양하게
+        const N = [15, 20, 25, 30][Math.floor(Math.random()*4)];
+        const Dpercent = [5,10,15,20,25,30][Math.floor(Math.random()*6)];
+        const discount = Dpercent;
+        // 최소 인원: n > N*(1 - discount/100)
+        const threshold = N * (1 - discount/100);
+        const nMin = Math.floor(threshold) + 1;
+        qObj.question = "어느 박물관의 특별 전시회 입장료는 한 사람당 \\(" + P + "\\)원이고, \\(" + N + "\\)명 이상의 단체인 경우에는 입장료의 \\(" + discount + "\\)%를 할인해 준다고 한다. 몇 명 이상부터 \\(" + N + "\\)명의 단체 입장권을 사는 것이 유리한가?";
+        const correct = nMin + "명 이상";
+        qObj.answer = correct;
+        qObj.choices = [ (nMin-1) + "명 이상", correct, (nMin+1) + "명 이상", (nMin+2) + "명 이상", (nMin-2) + "명 이상" ];
+      } else if (type === "notebook") {
+        const S = (Math.floor(Math.random() * 201) + 2400); // 2400~2600
+        const W = (Math.floor(Math.random() * 151) + 1600); // 1600~1750
+        const R = (Math.floor(Math.random() * 1001) + 5400); // 5400~6400
+        const diff = S - W;
+        const nMin = Math.floor(R / diff) + 1;
+        qObj.question = "집 앞 문구점에서 노트가 \\(" + S + "\\)원에 판다고 한다. 도매점에서는 노트를 \\(" + W + "\\)원에 판다고 하는데, 집에서 도매점에 가기 위해서는 왕복으로 \\(" + R + "\\)원의 차비가 든다. 도매점에 다녀오는 것이 유리하기 위해 구입할 수 있는 노트의 최소 개수는?";
+        const correct = nMin + "권";
+        qObj.answer = correct;
+        qObj.choices = [ (nMin-1) + "권", correct, (nMin+1) + "권", (nMin+2) + "권", (nMin-2) + "권" ];
+      }
+      return qObj;
+    }
+
+    // --- 시작 버튼 이벤트 ---
+    document.getElementById("start-button").addEventListener("click", () => {
+      const name = document.getElementById("player-name").value.trim();
+      if (name === "") {
+        alert("이름을 입력해주세요.");
+        return;
+      }
+      setDifficultySettings();
+      // 섞기
+      shuffleArray(questions);
+      overallStartTime = Date.now();
+      overallTimerInterval = setInterval(updateOverallTime, 1000);
+      document.getElementById("start-screen").style.display = "none";
+      document.getElementById("game-screen").style.display = "block";
+      loadNextQuestion();
+      MathJax.typeset();
+    });
+
+    // --- 점수 전송 함수 (서버로 데이터 전송) ---
+    async function saveData(game, name, score, elapsedTime) {
+      const FUNCTION_URL = "https://us-central1-record-f420d.cloudfunctions.net/report";
+      const requestData = {
+        game,
+        name,
+        score: parseInt(score, 10),
+        elapsedTime: parseInt(elapsedTime, 10)
+      };
+      try {
+        const response = await fetch(FUNCTION_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestData)
+        });
+        const responseData = await response.json();
+        if (response.ok) {
+          document.getElementById('response').innerText = `성공: ${JSON.stringify(responseData, null, 2)}`;
+        } else {
+          document.getElementById('response').innerText = `오류: ${JSON.stringify(responseData, null, 2)}`;
+        }
+      } catch (error) {
+        console.error('요청 실패:', error);
+        document.getElementById('response').innerText = `네트워크 오류: ${error.message}`;
+      }
+    }
+
+    // --- 점수 전송 버튼 이벤트 ---
+    document.getElementById("send-score").addEventListener("click", () => {
+      const name = document.getElementById("player-name").value.trim();
+      const now = Date.now();
+      const elapsedSec = Math.floor((now - overallStartTime) / 1000);
+      saveData("일차부등식 빈출 (4)", name, score, elapsedSec);
+    });
+  </script>
+</body>
+</html>
